@@ -3,7 +3,7 @@ import dbconn
 import config
 from discord.ext.commands import Bot
 
-bot = Bot(command_prefix='=')
+bot = Bot(command_prefix='>')
 db = dbconn.DataBase()
 
 
@@ -26,6 +26,23 @@ def get_link(s): #---------------------------------- complete
 
 	return links
 
+def is_admin(member, guild):
+
+	if member.id == guild.owner_id:
+		return True
+
+	for role in member.roles:
+		if role.name == 'Anti-Spammer-Mod':
+			return True
+		if role.permissions == discord.Permissions.administrator:
+			return True 
+		if role.permissions == discord.Permissions.ban_members:
+			return True 
+		if role.permissions == discord.Permissions.kick_members:
+			return True
+
+	return False
+
 
 @bot.event
 async def on_ready():
@@ -39,7 +56,7 @@ async def on_message(msz):
 
 	links = get_link(msz.content)
 
-	if links==[]:
+	if links==[] or is_admin(msz.author, msz.guild):
 		await bot.process_commands(msz)
 		return
 
@@ -62,8 +79,11 @@ async def on_message(msz):
 				await msz.reply(f"You sent an unverified link\n\n<{link}>")
 
 	if db.check_warning(msz.author.id)>=5:
-		await msz.author.add_roles( msz.guild.get_role(config.muted_role_id) )
-		await msz.channel.send(f'{msz.author} was muted for spamming')
+
+		role = msz.guild.get_role(config.muted_role_id)
+
+		await msz.author.add_roles( role )
+		await msz.channel.send(f'{msz.author.mention} was muted for spamming')
 
 	await bot.process_commands(msz)
 
@@ -102,7 +122,12 @@ async def show_unverifieds(ctx):
 	await ctx.send(s)
 
 @bot.command()
-async def verify(ctx, link):
+async def verify(ctx, link=''):
+
+	if not is_admin(ctx.author , ctx.guild):
+		await ctx.send("You are not allowed to verify links");
+		return
+
 	q = get_link(link)
 	if q==[]: 
 		await ctx.send("That wasn't a link")
@@ -127,7 +152,12 @@ async def verify(ctx, link):
 
 
 @bot.command()
-async def add_spam(ctx, link):
+async def add_spam(ctx, link=''):
+	
+	if not is_admin(ctx.author , ctx.guild):
+		await ctx.send("You are not allowed to verify links");
+		return
+
 	q = get_link(link)
 	if q==[]: 
 		await ctx.send("That wasn't a link")
@@ -145,14 +175,25 @@ async def add_spam(ctx, link):
 	if db.is_unverified(link):
 		ids = db.get_unverified_link_sender(link)
 		for id in ids:
-			db.del_warning(int(id))
+			db.del_warning(int(id))	
 
 	db.set_spam(link)
 	await ctx.send('link added to spammed list')
 
 
 @bot.command()
-async def pop_verified(ctx, link):
+async def pop_verified(ctx, link=''):
+	
+	if not is_admin(ctx.author , ctx.guild):
+		await ctx.send("You are not allowed to remove verify links");
+		return
+
+	q = get_link(link)
+	if q==[]: 
+		await ctx.send("That wasn't a link")
+		return
+	link = q[0]
+
 	if db.del_valid(link):
 		await ctx.send("Removed from verified list")
 	else:
@@ -160,7 +201,18 @@ async def pop_verified(ctx, link):
 
 
 @bot.command()
-async def pop_spammed(ctx, link):
+async def pop_spammed(ctx, link=''):
+
+	if not is_admin(ctx.author , ctx.guild):
+		await ctx.send("You are not allowed to remove spammed links");
+		return
+
+	q = get_link(link)
+	if q==[]: 
+		await ctx.send("That wasn't a link")
+		return
+	link = q[0]
+
 	if db.del_spam(link):
 		await ctx.send("Removed from spammed list")
 	else:
@@ -169,6 +221,10 @@ async def pop_spammed(ctx, link):
 
 @bot.command()
 async def warning_status(ctx):
+
+	if not is_admin(ctx.author , ctx.guild):
+		return
+
 	info = db.show_member()
 
 	s = '```\n'
@@ -183,6 +239,9 @@ async def warning_status(ctx):
 @bot.command()
 async def check_warning(ctx, user : discord.Member = None ):
 	if not user:
+		user = ctx.author
+
+	if not is_admin(ctx.author, ctx.guild):
 		user = ctx.author
 
 	w = db.check_warning(user.id)
